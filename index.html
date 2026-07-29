@@ -605,22 +605,23 @@
             },
 
             updateAssignment(employee, dayIndex, slot) {
-                const key = `${employee}:${dayIndex}`;
+                const weekKey = this.getWeekKey(this.currentWeekStart);
+                const key = `${employee}:${dayIndex}:${slot}`;
 
-                // Traccia il cambio localmente (non applicare subito a Supabase)
+                // Traccia il cambio localmente (permette doppi turni con chiave univoca per slot)
                 this.pendingChanges[key] = {
                     employee: employee,
                     dayIndex: dayIndex,
                     slot: slot,
-                    weekKey: this.getWeekKey(this.currentWeekStart)
+                    weekKey: weekKey
                 };
 
-                // Aggiorna la vista localmente per feedback immediato
+                // Aggiorna la vista localmente (permette multipli turni nello stesso giorno)
                 this.assignments[key] = {
                     employee: employee,
                     day_index: dayIndex,
                     slot: slot,
-                    week_key: this.getWeekKey(this.currentWeekStart)
+                    week_key: weekKey
                 };
 
                 this.renderGrid();
@@ -859,9 +860,9 @@
             const list = document.createElement('div');
             list.className = 'employees-list';
 
-            // Get employees assigned to this slot on this day
+            // Get employees assigned to this slot on this day (permette doppi turni!)
             EMPLOYEES.forEach(employee => {
-                const key = `${employee}:${dayIndex}`;
+                const key = `${employee}:${dayIndex}:${slot}`;
                 const assignment = app.assignments[key];
 
                 if (assignment && assignment.slot === slot) {
