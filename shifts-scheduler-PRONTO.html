@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestione Turni Settimanali</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #1a1a1a;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            color: #1a1a1a;
+        }
+
+        .week-nav {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .week-nav button {
+            padding: 8px 16px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .week-nav button:hover {
+            background: #5a67d8;
+            transform: translateY(-1px);
+        }
+
+        .week-nav button:active {
+            transform: translateY(0);
+        }
+
+        .week-label {
+            font-size: 16px;
+            font-weight: 600;
+            min-width: 280px;
+            text-align: center;
+            color: #667eea;
+        }
+
+        .grid-container {
+            overflow-x: auto;
+            border-radius: 12px;
+            border: 1px solid #e5e7eb;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 140px repeat(7, 1fr);
+            gap: 0;
+            min-width: 100%;
+        }
+
+        .cell {
+            border: 1px solid #e5e7eb;
+            min-height: 100px;
+            padding: 12px;
+            background: #f9fafb;
+            position: relative;
+        }
+
+        .cell.drop-target {
+            background: #f0f4ff;
+            border-color: #667eea;
+        }
+
+        .cell.drop-active {
+            background: #e0e7ff;
+            border: 2px dashed #667eea;
+        }
+
+        .header-cell {
+            background: #f3f4f6;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            color: #374151;
+            font-size: 14px;
+        }
+
+        .row-label {
+            background: #f3f4f6;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #374151;
+            font-size: 13px;
+            text-align: center;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .row-label .time {
+            font-size: 11px;
+            color: #6b7280;
+            font-weight: 400;
+        }
+
+        .shift-overlay {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 4px;
+            background: #f59e0b;
+            border-radius: 2px 0 0 2px;
+            height: 100%;
+            opacity: 0.5;
+        }
+
+        .shift-overlay.pomeriggio-sera {
+            display: block;
+        }
+
+        .employees-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            height: 100%;
+        }
+
+        .employee-card {
+            padding: 10px 12px;
+            border-radius: 8px;
+            cursor: move;
+            font-size: 14px;
+            font-weight: 500;
+            color: white;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            transition: all 0.15s;
+            user-select: none;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .employee-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+        }
+
+        .employee-card.dragging {
+            opacity: 0.7;
+        }
+
+        .employee-federico { background-color: #3B82F6; }
+        .employee-alessandra { background-color: #EC4899; }
+        .employee-margherita { background-color: #10B981; }
+        .employee-antonello { background-color: #F97316; }
+
+        .overflow-badge {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            background: #EF4444;
+            color: white;
+            font-size: 11px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+
+        .status {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 12px 16px;
+            background: #10B981;
+            color: white;
+            border-radius: 8px;
+            font-size: 14px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 100;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .status.show {
+            opacity: 1;
+        }
+
+        .status.error {
+            background: #EF4444;
+        }
+
+        .legend {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin-top: 25px;
+            padding-top: 20px;
+            border-top: 1px solid #e5e7eb;
+            font-size: 14px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 6px;
+        }
+
+        #confirmBtn {
+            transition: all 0.2s;
+        }
+
+        #confirmBtn:hover {
+            background: #059669;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+        }
+
+        #confirmBtn:active {
+            transform: translateY(0);
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+
+            .header {
+                margin-bottom: 20px;
+            }
+
+            .header h1 {
+                font-size: 20px;
+            }
+
+            .week-label {
+                min-width: auto;
+                font-size: 14px;
+            }
+
+            .cell {
+                min-height: 80px;
+                padding: 8px;
+            }
+
+            .employee-card {
+                font-size: 12px;
+                padding: 8px 10px;
+            }
+
+            .grid {
+                grid-template-columns: 90px repeat(7, 1fr);
+            }
+
+            .header-cell {
+                font-size: 12px;
+            }
+
+            .row-label {
+                font-size: 11px;
+            }
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6b7280;
+        }
+
+        .people-section {
+            background: #f3f4f6;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 25px;
+            border: 1px solid #e5e7eb;
+        }
+
+        .people-section h2 {
+            font-size: 14px;
+            font-weight: 600;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 15px;
+        }
+
+        .people-list {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .people-card {
+            padding: 12px 16px;
+            border-radius: 8px;
+            cursor: move;
+            font-size: 14px;
+            font-weight: 500;
+            color: white;
+            white-space: nowrap;
+            transition: all 0.15s;
+            user-select: none;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            border: 2px solid transparent;
+        }
+
+        .people-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+        }
+
+        .people-card.dragging {
+            opacity: 0.6;
+            transform: scale(1.05);
+        }
+
+        .people-card.federico { background-color: #3B82F6; }
+        .people-card.alessandra { background-color: #EC4899; }
+        .people-card.margherita { background-color: #10B981; }
+        .people-card.antonello { background-color: #F97316; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📅 Gestione Turni</h1>
+            <div class="week-nav">
+                <button id="prevBtn" onclick="app.previousWeek()">← Indietro</button>
+                <div class="week-label" id="weekLabel">Settimana...</div>
+                <button id="nextBtn" onclick="app.nextWeek()">Avanti →</button>
+            </div>
+        </div>
+
+        <div class="people-section">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h2 style="margin: 0;">👥 Persone Disponibili</h2>
+                <button id="confirmBtn" style="padding: 10px 20px; background: #10B981; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 14px;">📤 Invia notifiche al team</button>
+            </div>
+            <div class="people-list" id="peopleList"></div>
+        </div>
+
+        <div class="grid-container">
+            <div class="grid" id="grid"></div>
+        </div>
+
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: #3B82F6;"></div>
+                <span>Federico</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: #EC4899;"></div>
+                <span>Alessandra</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: #10B981;"></div>
+                <span>Margherita</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: #F97316;"></div>
+                <span>Antonello</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="status" id="status"></div>
+
+    <script>
+        // ===== CONFIG =====
+        const SUPABASE_URL = 'https://voyvvqyyfhnalesdzoqz.supabase.co';
+        const SUPABASE_ANON_KEY = 'sb_publishable_qKlJ7Jfv51U8AjsuSB5SEg_RHb-kZ-1';
+        const N8N_WEBHOOK_URL = 'https://n8n.srv1498875.hstgr.cloud/webhook/shifts/day-off-notification';
+
+        const EMPLOYEES = ['Federico', 'Alessandra', 'Margherita', 'Antonello'];
+        const SLOTS = ['mattina', 'pomeriggio', 'sera', 'libero'];
+        const SHIFTS_INFO = {
+            mattina: '08:00–15:00',
+            pomeriggio: '15:00–22:00',
+            sera: '18:00–22:00',
+            libero: 'Giorno libero'
+        };
+        const DEFAULT_ASSIGNMENTS = {
+            'Federico': 'mattina',
+            'Alessandra': 'pomeriggio',
+            'Margherita': 'sera',
+            'Antonello': null
+        };
+        const REQUIRES_CONFIRMATION = ['Federico', 'Alessandra', 'Margherita'];
+
+        // ===== STATE =====
+        const app = {
+            supabase: null,
+            currentWeekStart: getMonday(new Date()),
+            assignments: {},
+            dayOffConfirmations: {},
+            pendingChanges: {},
+            subscription: null,
+            confirmationSubscription: null,
+
+            async init() {
+                this.supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                await this.loadWeek();
+                await this.loadDayOffConfirmations();
+                this.subscribeToChanges();
+                this.subscribeToConfirmations();
+                this.render();
+            },
+
+            getWeekKey(date) {
+                const d = new Date(date);
+                d.setDate(d.getDate() - d.getDay() + (d.getDay() === 0 ? -6 : 1));
+                return d.toISOString().split('T')[0];
+            },
+
+            async loadWeek() {
+                const weekKey = this.getWeekKey(this.currentWeekStart);
+                try {
+                    const { data, error } = await this.supabase
+                        .from('assignments')
+                        .select('*')
+                        .eq('week_key', weekKey);
+
+                    if (error) throw error;
+
+                    this.assignments = {};
+
+                    if (!data || data.length === 0) {
+                        await this.initializeDefaultWeek(weekKey);
+                    } else {
+                        data.forEach(row => {
+                            const key = `${row.employee}:${row.day_index}`;
+                            this.assignments[key] = row;
+                        });
+                    }
+
+                    this.showStatus('Dati caricati', false);
+                } catch (error) {
+                    console.error('Errore nel caricamento:', error);
+                    this.showStatus('Errore nel caricamento dei dati', true);
+                }
+            },
+
+            async initializeDefaultWeek(weekKey) {
+                try {
+                    const defaultRecords = [];
+                    for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+                        for (const employee of EMPLOYEES) {
+                            const slot = DEFAULT_ASSIGNMENTS[employee];
+                            if (slot) {
+                                defaultRecords.push({
+                                    week_key: weekKey,
+                                    day_index: dayIndex,
+                                    employee: employee,
+                                    slot: slot
+                                });
+                            }
+                        }
+                    }
+
+                    if (defaultRecords.length > 0) {
+                        const { error } = await this.supabase
+                            .from('assignments')
+                            .insert(defaultRecords);
+
+                        if (error) throw error;
+
+                        defaultRecords.forEach(row => {
+                            const key = `${row.employee}:${row.day_index}`;
+                            this.assignments[key] = row;
+                        });
+                    }
+                } catch (error) {
+                    console.error('Errore nell\'inizializzazione:', error);
+                }
+            },
+
+            async loadDayOffConfirmations() {
+                const weekKey = this.getWeekKey(this.currentWeekStart);
+                try {
+                    const { data, error } = await this.supabase
+                        .from('day_off_confirmations')
+                        .select('*')
+                        .eq('week_key', weekKey);
+
+                    if (error) throw error;
+
+                    this.dayOffConfirmations = {};
+                    if (data) {
+                        data.forEach(row => {
+                            const key = `${row.employee}:${row.day_index}`;
+                            this.dayOffConfirmations[key] = row;
+                        });
+                    }
+                } catch (error) {
+                    console.error('Errore nel caricamento conferme:', error);
+                }
+            },
+
+            subscribeToChanges() {
+                if (this.subscription) {
+                    this.subscription.unsubscribe();
+                }
+
+                const weekKey = this.getWeekKey(this.currentWeekStart);
+
+                this.subscription = this.supabase
+                    .channel('assignments-' + weekKey)
+                    .on(
+                        'postgres_changes',
+                        {
+                            event: '*',
+                            schema: 'public',
+                            table: 'assignments',
+                            filter: 'week_key=eq.' + weekKey
+                        },
+                        (payload) => {
+                            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+                                const row = payload.new;
+                                const key = `${row.employee}:${row.day_index}`;
+                                this.assignments[key] = row;
+                                this.renderGrid();
+                            } else if (payload.eventType === 'DELETE') {
+                                const row = payload.old;
+                                const key = `${row.employee}:${row.day_index}`;
+                                delete this.assignments[key];
+                                this.renderGrid();
+                            }
+                        }
+                    )
+                    .subscribe();
+            },
+
+            subscribeToConfirmations() {
+                if (this.confirmationSubscription) {
+                    this.confirmationSubscription.unsubscribe();
+                }
+
+                const weekKey = this.getWeekKey(this.currentWeekStart);
+
+                this.confirmationSubscription = this.supabase
+                    .channel('day_off_confirmations-' + weekKey)
+                    .on(
+                        'postgres_changes',
+                        {
+                            event: '*',
+                            schema: 'public',
+                            table: 'day_off_confirmations',
+                            filter: 'week_key=eq.' + weekKey
+                        },
+                        (payload) => {
+                            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+                                const row = payload.new;
+                                const key = `${row.employee}:${row.day_index}`;
+                                this.dayOffConfirmations[key] = row;
+                                this.renderGrid();
+                            } else if (payload.eventType === 'DELETE') {
+                                const row = payload.old;
+                                const key = `${row.employee}:${row.day_index}`;
+                                delete this.dayOffConfirmations[key];
+                                this.renderGrid();
+                            }
+                        }
+                    )
+                    .subscribe();
+            },
+
+            updateAssignment(employee, dayIndex, slot) {
+                const key = `${employee}:${dayIndex}`;
+
+                // Traccia il cambio localmente (non applicare subito a Supabase)
+                this.pendingChanges[key] = {
+                    employee: employee,
+                    dayIndex: dayIndex,
+                    slot: slot,
+                    weekKey: this.getWeekKey(this.currentWeekStart)
+                };
+
+                // Aggiorna la vista localmente per feedback immediato
+                this.assignments[key] = {
+                    employee: employee,
+                    day_index: dayIndex,
+                    slot: slot,
+                    week_key: this.getWeekKey(this.currentWeekStart)
+                };
+
+                this.renderGrid();
+                this.showStatus(`${employee} → ${SHIFTS_INFO[slot]} (in sospeso, clicca 📤 per inviare)`, false);
+            },
+
+            async confirmAllChanges() {
+                const weekKey = this.getWeekKey(this.currentWeekStart);
+                const changes = Object.values(this.pendingChanges);
+
+                if (changes.length === 0) {
+                    this.showStatus('Nessun cambio da confermare', false);
+                    return;
+                }
+
+                try {
+                    // Invia tutti i cambiamenti a Supabase
+                    for (const change of changes) {
+                        // Rimuovi assegnazione precedente della persona per questo giorno (se esiste)
+                        const { data: existing } = await this.supabase
+                            .from('assignments')
+                            .select('id')
+                            .eq('employee', change.employee)
+                            .eq('day_index', change.dayIndex)
+                            .eq('week_key', weekKey);
+
+                        if (existing && existing.length > 0) {
+                            await this.supabase
+                                .from('assignments')
+                                .delete()
+                                .eq('id', existing[0].id);
+                        }
+
+                        // Inserisci il nuovo assegnamento
+                        if (change.slot !== 'libero') {
+                            await this.supabase
+                                .from('assignments')
+                                .insert([{
+                                    week_key: weekKey,
+                                    day_index: change.dayIndex,
+                                    employee: change.employee,
+                                    slot: change.slot
+                                }]);
+
+                            // Se è un giorno libero e la persona richiede conferma: notifica n8n
+                            if (REQUIRES_CONFIRMATION.includes(change.employee)) {
+                                this.notifyDayOff(change.employee, change.dayIndex, weekKey);
+                            }
+                        }
+                    }
+
+                    // Pulisci i cambiamenti pendenti
+                    this.pendingChanges = {};
+
+                    // Ricarica la settimana
+                    await this.loadWeek();
+                    this.renderGrid();
+                    this.showStatus(`✅ ${changes.length} cambio/i confermato/i!`, false);
+                } catch (error) {
+                    console.error('Errore nella conferma:', error);
+                    this.showStatus('Errore nella conferma dei cambiamenti', true);
+                }
+            },
+
+            async notifyDayOff(employee, dayIndex, weekKey) {
+                try {
+                    const response = await fetch(N8N_WEBHOOK_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ week_key: weekKey, day_index: dayIndex, employee: employee })
+                    });
+
+                    if (!response.ok) {
+                        console.error('Errore nella notifica n8n:', response.status);
+                    }
+                } catch (error) {
+                    console.error('Errore nell\'invio della notifica:', error);
+                    this.showStatus('Errore nell\'invio della notifica Telegram', true);
+                }
+            },
+
+            previousWeek() {
+                this.currentWeekStart.setDate(this.currentWeekStart.getDate() - 7);
+                this.loadWeek().then(() => {
+                    this.loadDayOffConfirmations().then(() => {
+                        this.subscribeToChanges();
+                        this.subscribeToConfirmations();
+                        this.render();
+                    });
+                });
+            },
+
+            nextWeek() {
+                this.currentWeekStart.setDate(this.currentWeekStart.getDate() + 7);
+                this.loadWeek().then(() => {
+                    this.loadDayOffConfirmations().then(() => {
+                        this.subscribeToChanges();
+                        this.subscribeToConfirmations();
+                        this.render();
+                    });
+                });
+            },
+
+            render() {
+                this.updateWeekLabel();
+                this.renderPeople();
+                this.renderGrid();
+            },
+
+            renderPeople() {
+                const peopleList = document.getElementById('peopleList');
+                peopleList.innerHTML = '';
+
+                EMPLOYEES.forEach(employee => {
+                    const card = document.createElement('div');
+                    card.className = `people-card ${employee.toLowerCase()}`;
+                    card.textContent = employee;
+                    card.draggable = true;
+
+                    card.ondragstart = (e) => {
+                        e.dataTransfer.effectAllowed = 'move';
+                        e.dataTransfer.setData('text/plain', employee);
+                        card.classList.add('dragging');
+                    };
+
+                    card.ondragend = () => {
+                        card.classList.remove('dragging');
+                    };
+
+                    peopleList.appendChild(card);
+                });
+            },
+
+            updateWeekLabel() {
+                const start = new Date(this.currentWeekStart);
+                const end = new Date(this.currentWeekStart);
+                end.setDate(end.getDate() + 6);
+
+                const startDay = start.getDate();
+                const startMonth = getMonthName(start.getMonth());
+                const endDay = end.getDate();
+                const endMonth = getMonthName(end.getMonth());
+                const year = start.getFullYear();
+
+                if (start.getMonth() === end.getMonth()) {
+                    document.getElementById('weekLabel').textContent =
+                        `Settimana ${startDay}–${endDay} ${startMonth} ${year}`;
+                } else {
+                    document.getElementById('weekLabel').textContent =
+                        `Settimana ${startDay} ${startMonth} – ${endDay} ${endMonth} ${year}`;
+                }
+            },
+
+            renderGrid() {
+                const grid = document.getElementById('grid');
+                grid.innerHTML = '';
+
+                // Header
+                grid.appendChild(createHeaderCell(''));
+                for (let i = 0; i < 7; i++) {
+                    const d = new Date(this.currentWeekStart);
+                    d.setDate(d.getDate() + i);
+                    grid.appendChild(createHeaderCell(getDayName(d.getDay()) + ' ' + d.getDate()));
+                }
+
+                // Rows
+                SLOTS.forEach(slot => {
+                    grid.appendChild(createRowLabel(slot));
+
+                    for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+                        const cell = createCell(dayIndex, slot);
+                        grid.appendChild(cell);
+                    }
+                });
+            },
+
+            showStatus(message, isError) {
+                const statusEl = document.getElementById('status');
+                statusEl.textContent = message;
+                statusEl.classList.toggle('error', isError);
+                statusEl.classList.add('show');
+
+                setTimeout(() => {
+                    statusEl.classList.remove('show');
+                }, 3000);
+            }
+        };
+
+        // ===== HELPERS =====
+        function getMonday(date) {
+            const d = new Date(date);
+            const day = d.getDay();
+            const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+            return new Date(d.setDate(diff));
+        }
+
+        function getDayName(dayIndex) {
+            const names = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
+            return names[dayIndex];
+        }
+
+        function getMonthName(monthIndex) {
+            const names = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic'];
+            return names[monthIndex];
+        }
+
+        function createHeaderCell(text) {
+            const cell = document.createElement('div');
+            cell.className = 'cell header-cell';
+            cell.textContent = text;
+            return cell;
+        }
+
+        function createRowLabel(slot) {
+            const cell = document.createElement('div');
+            cell.className = 'cell row-label';
+            const mainText = document.createElement('div');
+            mainText.textContent = slot.charAt(0).toUpperCase() + slot.slice(1);
+            const timeText = document.createElement('div');
+            timeText.className = 'time';
+            timeText.textContent = SHIFTS_INFO[slot];
+            cell.appendChild(mainText);
+            cell.appendChild(timeText);
+            return cell;
+        }
+
+        function createCell(dayIndex, slot) {
+            const cell = document.createElement('div');
+            cell.className = 'cell drop-target';
+            if (slot === 'sera' && dayIndex < 7) {
+                const overlay = document.createElement('div');
+                overlay.className = 'shift-overlay pomeriggio-sera';
+                cell.appendChild(overlay);
+            }
+
+            const list = document.createElement('div');
+            list.className = 'employees-list';
+
+            // Get employees assigned to this slot on this day
+            EMPLOYEES.forEach(employee => {
+                const key = `${employee}:${dayIndex}`;
+                const assignment = app.assignments[key];
+
+                if (assignment && assignment.slot === slot) {
+                    const card = createEmployeeCard(employee, dayIndex, slot);
+
+                    // Se è giorno libero e la persona richiede conferma: aggiungi indicatore
+                    if (slot === 'libero' && REQUIRES_CONFIRMATION.includes(employee)) {
+                        const confirmationKey = `${employee}:${dayIndex}`;
+                        const confirmation = app.dayOffConfirmations[confirmationKey];
+                        if (confirmation) {
+                            const badge = document.createElement('div');
+                            badge.style.cssText = 'position: absolute; top: 2px; right: 2px; font-size: 12px;';
+                            badge.textContent = confirmation.confirmed ? '✅' : '⏳';
+                            card.style.position = 'relative';
+                            card.appendChild(badge);
+                        }
+                    }
+
+                    list.appendChild(card);
+                }
+            });
+
+            // Add empty state message if no one assigned
+            if (list.children.length === 0) {
+                const empty = document.createElement('div');
+                empty.style.cssText = 'color: #d1d5db; font-size: 12px; text-align: center; padding: 20px 0;';
+                empty.textContent = '—';
+                list.appendChild(empty);
+            }
+
+            // Check for overflow (only for non-libero slots)
+            if (slot !== 'libero') {
+                const assignedCount = Array.from(list.children).filter(
+                    child => child.classList.contains('employee-card')
+                ).length;
+
+                if (assignedCount > 1) {
+                    const badge = document.createElement('div');
+                    badge.className = 'overflow-badge';
+                    badge.textContent = `+${assignedCount - 1}`;
+                    cell.appendChild(badge);
+                }
+            }
+
+            cell.appendChild(list);
+
+            // Drag and drop
+            cell.ondragover = (e) => {
+                e.preventDefault();
+                cell.classList.add('drop-active');
+            };
+
+            cell.ondragleave = () => {
+                cell.classList.remove('drop-active');
+            };
+
+            cell.ondrop = (e) => {
+                e.preventDefault();
+                cell.classList.remove('drop-active');
+                const employee = e.dataTransfer.getData('text/plain');
+                app.updateAssignment(employee, dayIndex, slot);
+            };
+
+            return cell;
+        }
+
+        function createEmployeeCard(employee, dayIndex, slot) {
+            const card = document.createElement('div');
+            card.className = 'employee-card employee-' + employee.toLowerCase();
+            card.textContent = employee;
+            card.draggable = true;
+
+            card.ondragstart = (e) => {
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', employee);
+                card.classList.add('dragging');
+            };
+
+            card.ondragend = () => {
+                card.classList.remove('dragging');
+            };
+
+            // Touch fallback for mobile
+            card.ontouchstart = () => {
+                card.style.opacity = '0.5';
+            };
+
+            card.ontouchend = () => {
+                card.style.opacity = '1';
+            };
+
+            return card;
+        }
+
+        // ===== INIT =====
+        document.addEventListener('DOMContentLoaded', () => {
+            app.init();
+
+            // Event listener per pulsante conferma
+            document.getElementById('confirmBtn').addEventListener('click', () => {
+                app.confirmAllChanges();
+            });
+        });
+    </script>
+</body>
+</html>
