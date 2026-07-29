@@ -246,6 +246,20 @@
             border-radius: 6px;
         }
 
+        #confirmBtn {
+            transition: all 0.2s;
+        }
+
+        #confirmBtn:hover {
+            background: #059669;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+        }
+
+        #confirmBtn:active {
+            transform: translateY(0);
+        }
+
         @media (max-width: 768px) {
             .container {
                 padding: 15px;
@@ -358,7 +372,10 @@
         </div>
 
         <div class="people-section">
-            <h2>👥 Persone Disponibili</h2>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h2 style="margin: 0;">👥 Persone Disponibili</h2>
+                <button id="confirmBtn" style="padding: 10px 20px; background: #10B981; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 14px;">✅ Conferma turni</button>
+            </div>
             <div class="people-list" id="peopleList"></div>
         </div>
 
@@ -416,6 +433,7 @@
             currentWeekStart: getMonday(new Date()),
             assignments: {},
             dayOffConfirmations: {},
+            pendingChanges: {},
             subscription: null,
             confirmationSubscription: null,
 
@@ -586,68 +604,84 @@
                     .subscribe();
             },
 
-            async updateAssignment(employee, dayIndex, slot) {
+            updateAssignment(employee, dayIndex, slot) {
+                const key = `${employee}:${dayIndex}`;
+
+                // Traccia il cambio localmente (non applicare subito a Supabase)
+                this.pendingChanges[key] = {
+                    employee: employee,
+                    dayIndex: dayIndex,
+                    slot: slot,
+                    weekKey: this.getWeekKey(this.currentWeekStart)
+                };
+
+                // Aggiorna la vista localmente per feedback immediato
+                this.assignments[key] = {
+                    employee: employee,
+                    day_index: dayIndex,
+                    slot: slot,
+                    week_key: this.getWeekKey(this.currentWeekStart)
+                };
+
+                this.renderGrid();
+                this.showStatus(`${employee} → ${SHIFTS_INFO[slot]} (non confermato)`, false);
+            },
+
+            async confirmAllChanges() {
                 const weekKey = this.getWeekKey(this.currentWeekStart);
+                const changes = Object.values(this.pendingChanges);
+
+                if (changes.length === 0) {
+                    this.showStatus('Nessun cambio da confermare', false);
+                    return;
+                }
 
                 try {
-                    // Remove existing assignment for this employee on this day
-                    for (const key in this.assignments) {
-                        const [emp, day] = key.split(':');
-                        if (emp === employee && parseInt(day) === dayIndex) {
-                            const oldAssignment = this.assignments[key];
-                            if (oldAssignment.id) {
-                                await this.supabase
-                                    .from('assignments')
-                                    .delete()
-                                    .eq('id', oldAssignment.id);
-                            }
-                            delete this.assignments[key];
+                    // Invia tutti i cambiamenti a Supabase
+                    for (const change of changes) {
+                        // Rimuovi assegnazione precedente della persona per questo giorno (se esiste)
+                        const { data: existing } = await this.supabase
+                            .from('assignments')
+                            .select('id')
+                            .eq('employee', change.employee)
+                            .eq('day_index', change.dayIndex)
+                            .eq('week_key', weekKey);
+
+                        if (existing && existing.length > 0) {
+                            await this.supabase
+                                .from('assignments')
+                                .delete()
+                                .eq('id', existing[0].id);
                         }
-                    }
 
-                    // Insert new assignment
-                    const { data, error } = await this.supabase
-                        .from('assignments')
-                        .insert([{
-                            week_key: weekKey,
-                            day_index: dayIndex,
-                            employee: employee,
-                            slot: slot
-                        }]);
+                        // Inserisci il nuovo assegnamento
+                        if (change.slot !== 'libero') {
+                            await this.supabase
+                                .from('assignments')
+                                .insert([{
+                                    week_key: weekKey,
+                                    day_index: change.dayIndex,
+                                    employee: change.employee,
+                                    slot: change.slot
+                                }]);
 
-                    if (error) throw error;
-
-                    const key = `${employee}:${dayIndex}`;
-                    this.assignments[key] = data[0];
-
-                    // Se è un giorno libero e la persona richiede conferma: notifica n8n
-                    if (slot === 'libero' && REQUIRES_CONFIRMATION.includes(employee)) {
-                        this.notifyDayOff(employee, dayIndex, weekKey);
-                    }
-
-                    // Se viene riassegnato a un turno di lavoro: cancella la richiesta di conferma pendente
-                    if (slot !== 'libero' && REQUIRES_CONFIRMATION.includes(employee)) {
-                        const confirmKey = `${employee}:${dayIndex}`;
-                        const confirmation = this.dayOffConfirmations[confirmKey];
-                        if (confirmation && !confirmation.confirmed) {
-                            try {
-                                await this.supabase
-                                    .from('day_off_confirmations')
-                                    .delete()
-                                    .eq('id', confirmation.id);
-                            } catch (err) {
-                                console.error('Errore nella cancellazione della conferma:', err);
+                            // Se è un giorno libero e la persona richiede conferma: notifica n8n
+                            if (REQUIRES_CONFIRMATION.includes(change.employee)) {
+                                this.notifyDayOff(change.employee, change.dayIndex, weekKey);
                             }
                         }
                     }
 
-                    this.renderGrid();
-                    this.showStatus(`${employee} assegnato a ${SHIFTS_INFO[slot]}`, false);
-                } catch (error) {
-                    console.error('Errore nell\'aggiornamento:', error);
-                    this.showStatus('Errore nell\'aggiornamento', true);
+                    // Pulisci i cambiamenti pendenti
+                    this.pendingChanges = {};
+
+                    // Ricarica la settimana
                     await this.loadWeek();
                     this.renderGrid();
+                    this.showStatus(`✅ ${changes.length} cambio/i confermato/i!`, false);
+                } catch (error) {
+                    console.error('Errore nella conferma:', error);
+                    this.showStatus('Errore nella conferma dei cambiamenti', true);
                 }
             },
 
@@ -925,6 +959,11 @@
         // ===== INIT =====
         document.addEventListener('DOMContentLoaded', () => {
             app.init();
+
+            // Event listener per pulsante conferma
+            document.getElementById('confirmBtn').addEventListener('click', () => {
+                app.confirmAllChanges();
+            });
         });
     </script>
 </body>
