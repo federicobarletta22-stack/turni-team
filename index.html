@@ -392,22 +392,23 @@
 
             subscribeToChanges() {
                 if (this.subscription) {
-                    this.subscription.unsubscribe();
+                    this.supabase.removeChannel(this.subscription);
                 }
-
                 const weekKey = this.getWeekKey(this.currentWeekStart);
                 this.subscription = this.supabase
-                    .from('assignments')
-                    .on('*', payload => {
-                        if (payload.new && payload.new.week_key === weekKey) {
-                            const key = `${payload.new.employee}:${payload.new.day_index}`;
-                            this.assignments[key] = payload.new;
-                            this.renderGrid();
-                        } else if (payload.old && payload.old.week_key === weekKey) {
-                            const key = `${payload.old.employee}:${payload.old.day_index}`;
+                    .channel('assignments-changes-' + weekKey)
+                    .on('postgres_changes', { event: '*', schema: 'public', table: 'assignments' }, payload => {
+                        const row = payload.new && Object.keys(payload.new).length ? payload.new : payload.old;
+                        if (!row || row.week_key !== weekKey) return;
+
+                        if (payload.eventType === 'DELETE') {
+                            const key = `${row.employee}:${row.day_index}`;
                             delete this.assignments[key];
-                            this.renderGrid();
+                        } else {
+                            const key = `${row.employee}:${row.day_index}`;
+                            this.assignments[key] = payload.new;
                         }
+                        this.renderGrid();
                     })
                     .subscribe();
             },
