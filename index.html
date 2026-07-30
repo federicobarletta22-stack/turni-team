@@ -466,9 +466,20 @@
 
                     if (!data || data.length === 0) {
                         await this.initializeDefaultWeek(weekKey);
+                        // Ricarica i dati appena creati
+                        const { data: newData } = await this.supabase
+                            .from('assignments')
+                            .select('*')
+                            .eq('week_key', weekKey);
+                        if (newData) {
+                            newData.forEach(row => {
+                                const key = `${row.employee}:${row.day_index}:${row.slot}`;
+                                this.assignments[key] = row;
+                            });
+                        }
                     } else {
                         data.forEach(row => {
-                            const key = `${row.employee}:${row.day_index}`;
+                            const key = `${row.employee}:${row.day_index}:${row.slot}`;
                             this.assignments[key] = row;
                         });
                     }
@@ -943,6 +954,15 @@
 
             card.ondragend = () => {
                 card.classList.remove('dragging');
+            };
+
+            // Doppio click per rimuovere da questo turno
+            card.ondblclick = () => {
+                const key = `${employee}:${dayIndex}:${slot}`;
+                delete app.pendingChanges[key];
+                delete app.assignments[key];
+                app.renderGrid();
+                app.showStatus(`${employee} rimosso da ${SHIFTS_INFO[slot]}`, false);
             };
 
             // Touch fallback for mobile
