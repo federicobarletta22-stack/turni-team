@@ -409,7 +409,7 @@
         // ===== CONFIG =====
         const SUPABASE_URL = 'https://voyvvqyyfhnalesdzoqz.supabase.co';
         const SUPABASE_ANON_KEY = 'sb_publishable_qKlJ7Jfv51U8AjsuSB5SEg_RHb-kZ-1';
-        const N8N_WEBHOOK_URL = 'https://n8n.srv1498875.hstgr.cloud/webhook/shifts/day-off-notification';
+        const N8N_WEBHOOK_URL = 'https://cors-anywhere.herokuapp.com/https://n8n.srv1498875.hstgr.cloud/webhook/shifts/day-off-notification';
 
         const EMPLOYEES = ['Federico', 'Alessandra', 'Margherita', 'Antonello'];
         const SLOTS = ['mattina', 'pomeriggio', 'sera', 'libero'];
@@ -666,7 +666,7 @@
                                 .eq('id', existing[0].id);
                         }
 
-                        // Inserisci il nuovo assegnamento
+                        // Inserisci il nuovo assegnamento (solo turni di lavoro)
                         if (change.slot !== 'libero') {
                             await this.supabase
                                 .from('assignments')
@@ -676,11 +676,11 @@
                                     employee: change.employee,
                                     slot: change.slot
                                 }]);
+                        }
 
-                            // Se è un giorno libero e la persona richiede conferma: notifica n8n
-                            if (REQUIRES_CONFIRMATION.includes(change.employee)) {
-                                this.notifyDayOff(change.employee, change.dayIndex, weekKey);
-                            }
+                        // Se è un giorno libero e la persona richiede conferma: notifica n8n
+                        if (change.slot === 'libero' && REQUIRES_CONFIRMATION.includes(change.employee)) {
+                            this.notifyDayOff(change.employee, change.dayIndex, weekKey);
                         }
                     }
 
