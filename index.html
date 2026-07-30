@@ -701,11 +701,7 @@
                 try {
                     const response = await fetch(N8N_WEBHOOK_URL, {
                         method: 'POST',
-                        headers: {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-},
-,
+                        headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ week_key: weekKey, day_index: dayIndex, employee: employee })
                     });
 
