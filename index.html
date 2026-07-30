@@ -409,7 +409,7 @@
         // ===== CONFIG =====
         const SUPABASE_URL = 'https://voyvvqyyfhnalesdzoqz.supabase.co';
         const SUPABASE_ANON_KEY = 'sb_publishable_qKlJ7Jfv51U8AjsuSB5SEg_RHb-kZ-1';
-        const N8N_WEBHOOK_URL = 'https://cors-anywhere.herokuapp.com/https://n8n.srv1498875.hstgr.cloud/webhook/shifts/day-off-notification';
+        const N8N_WEBHOOK_URL = 'https://api.allorigins.win/raw?url=https://n8n.srv1498875.hstgr.cloud/webhook/shifts/day-off-notification';
 
         const EMPLOYEES = ['Federico', 'Alessandra', 'Margherita', 'Antonello'];
         const SLOTS = ['mattina', 'pomeriggio', 'sera', 'libero'];
@@ -651,23 +651,28 @@
                 try {
                     // Invia tutti i cambiamenti a Supabase
                     for (const change of changes) {
-                        // Rimuovi assegnazione precedente della persona per questo giorno (se esiste)
-                        const { data: existing } = await this.supabase
-                            .from('assignments')
-                            .select('id')
-                            .eq('employee', change.employee)
-                            .eq('day_index', change.dayIndex)
-                            .eq('week_key', weekKey);
-
-                        if (existing && existing.length > 0) {
+                        // Se è un giorno libero: rimuovi tutti i turni della persona per questo giorno
+                        if (change.slot === 'libero') {
                             await this.supabase
                                 .from('assignments')
                                 .delete()
-                                .eq('id', existing[0].id);
-                        }
+                                .eq('employee', change.employee)
+                                .eq('day_index', change.dayIndex)
+                                .eq('week_key', weekKey);
 
-                        // Inserisci il nuovo assegnamento (solo turni di lavoro)
-                        if (change.slot !== 'libero') {
+                            // Notifica n8n per il giorno libero
+                            if (REQUIRES_CONFIRMATION.includes(change.employee)) {
+                                this.notifyDayOff(change.employee, change.dayIndex, weekKey);
+                            }
+                        } else {
+                            // Se è un turno di lavoro: rimuovi vecchi turni, poi inserisci il nuovo
+                            await this.supabase
+                                .from('assignments')
+                                .delete()
+                                .eq('employee', change.employee)
+                                .eq('day_index', change.dayIndex)
+                                .eq('week_key', weekKey);
+
                             await this.supabase
                                 .from('assignments')
                                 .insert([{
@@ -676,11 +681,6 @@
                                     employee: change.employee,
                                     slot: change.slot
                                 }]);
-                        }
-
-                        // Se è un giorno libero e la persona richiede conferma: notifica n8n
-                        if (change.slot === 'libero' && REQUIRES_CONFIRMATION.includes(change.employee)) {
-                            this.notifyDayOff(change.employee, change.dayIndex, weekKey);
                         }
                     }
 
