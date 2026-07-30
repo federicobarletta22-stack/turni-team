@@ -246,6 +246,20 @@
             border-radius: 6px;
         }
 
+        #confirmBtn {
+            transition: all 0.2s;
+        }
+
+        #confirmBtn:hover {
+            background: #059669;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+        }
+
+        #confirmBtn:active {
+            transform: translateY(0);
+        }
+
         @media (max-width: 768px) {
             .container {
                 padding: 15px;
@@ -292,6 +306,58 @@
             padding: 40px;
             color: #6b7280;
         }
+
+        .people-section {
+            background: #f3f4f6;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 25px;
+            border: 1px solid #e5e7eb;
+        }
+
+        .people-section h2 {
+            font-size: 14px;
+            font-weight: 600;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 15px;
+        }
+
+        .people-list {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .people-card {
+            padding: 12px 16px;
+            border-radius: 8px;
+            cursor: move;
+            font-size: 14px;
+            font-weight: 500;
+            color: white;
+            white-space: nowrap;
+            transition: all 0.15s;
+            user-select: none;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            border: 2px solid transparent;
+        }
+
+        .people-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+        }
+
+        .people-card.dragging {
+            opacity: 0.6;
+            transform: scale(1.05);
+        }
+
+        .people-card.federico { background-color: #3B82F6; }
+        .people-card.alessandra { background-color: #EC4899; }
+        .people-card.margherita { background-color: #10B981; }
+        .people-card.antonello { background-color: #F97316; }
     </style>
 </head>
 <body>
@@ -303,6 +369,14 @@
                 <div class="week-label" id="weekLabel">Settimana...</div>
                 <button id="nextBtn" onclick="app.nextWeek()">Avanti →</button>
             </div>
+        </div>
+
+        <div class="people-section">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h2 style="margin: 0;">👥 Persone Disponibili</h2>
+                <button id="confirmBtn" style="padding: 10px 20px; background: #10B981; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 14px;">📤 Invia notifiche al team</button>
+            </div>
+            <div class="people-list" id="peopleList"></div>
         </div>
 
         <div class="grid-container">
@@ -335,6 +409,7 @@
         // ===== CONFIG =====
         const SUPABASE_URL = 'https://voyvvqyyfhnalesdzoqz.supabase.co';
         const SUPABASE_ANON_KEY = 'sb_publishable_qKlJ7Jfv51U8AjsuSB5SEg_RHb-kZ-1';
+        const N8N_WEBHOOK_URL = 'https://n8n.srv1498875.hstgr.cloud/webhook/shifts/day-off-notification';
 
         const EMPLOYEES = ['Federico', 'Alessandra', 'Margherita', 'Antonello'];
         const SLOTS = ['mattina', 'pomeriggio', 'sera', 'libero'];
@@ -344,18 +419,30 @@
             sera: '18:00–22:00',
             libero: 'Giorno libero'
         };
+        const DEFAULT_ASSIGNMENTS = {
+            'Federico': 'mattina',
+            'Alessandra': 'pomeriggio',
+            'Margherita': 'sera',
+            'Antonello': null
+        };
+        const REQUIRES_CONFIRMATION = ['Federico', 'Alessandra', 'Margherita'];
 
         // ===== STATE =====
         const app = {
             supabase: null,
             currentWeekStart: getMonday(new Date()),
             assignments: {},
+            dayOffConfirmations: {},
+            pendingChanges: {},
             subscription: null,
+            confirmationSubscription: null,
 
             async init() {
                 this.supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
                 await this.loadWeek();
+                await this.loadDayOffConfirmations();
                 this.subscribeToChanges();
+                this.subscribeToConfirmations();
                 this.render();
             },
 
@@ -376,9 +463,23 @@
                     if (error) throw error;
 
                     this.assignments = {};
-                    if (data) {
+
+                    if (!data || data.length === 0) {
+                        await this.initializeDefaultWeek(weekKey);
+                        // Ricarica i dati appena creati
+                        const { data: newData } = await this.supabase
+                            .from('assignments')
+                            .select('*')
+                            .eq('week_key', weekKey);
+                        if (newData) {
+                            newData.forEach(row => {
+                                const key = `${row.employee}:${row.day_index}:${row.slot}`;
+                                this.assignments[key] = row;
+                            });
+                        }
+                    } else {
                         data.forEach(row => {
-                            const key = `${row.employee}:${row.day_index}`;
+                            const key = `${row.employee}:${row.day_index}:${row.slot}`;
                             this.assignments[key] = row;
                         });
                     }
@@ -390,93 +491,279 @@
                 }
             },
 
+            async initializeDefaultWeek(weekKey) {
+                try {
+                    const defaultRecords = [];
+                    for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+                        for (const employee of EMPLOYEES) {
+                            const slot = DEFAULT_ASSIGNMENTS[employee];
+                            if (slot) {
+                                defaultRecords.push({
+                                    week_key: weekKey,
+                                    day_index: dayIndex,
+                                    employee: employee,
+                                    slot: slot
+                                });
+                            }
+                        }
+                    }
+
+                    if (defaultRecords.length > 0) {
+                        const { error } = await this.supabase
+                            .from('assignments')
+                            .insert(defaultRecords);
+
+                        if (error) throw error;
+
+                        defaultRecords.forEach(row => {
+                            const key = `${row.employee}:${row.day_index}`;
+                            this.assignments[key] = row;
+                        });
+                    }
+                } catch (error) {
+                    console.error('Errore nell\'inizializzazione:', error);
+                }
+            },
+
+            async loadDayOffConfirmations() {
+                const weekKey = this.getWeekKey(this.currentWeekStart);
+                try {
+                    const { data, error } = await this.supabase
+                        .from('day_off_confirmations')
+                        .select('*')
+                        .eq('week_key', weekKey);
+
+                    if (error) throw error;
+
+                    this.dayOffConfirmations = {};
+                    if (data) {
+                        data.forEach(row => {
+                            const key = `${row.employee}:${row.day_index}`;
+                            this.dayOffConfirmations[key] = row;
+                        });
+                    }
+                } catch (error) {
+                    console.error('Errore nel caricamento conferme:', error);
+                }
+            },
+
             subscribeToChanges() {
                 if (this.subscription) {
                     this.subscription.unsubscribe();
                 }
 
                 const weekKey = this.getWeekKey(this.currentWeekStart);
+
                 this.subscription = this.supabase
-                    .from('assignments')
-                    .on('*', payload => {
-                        if (payload.new && payload.new.week_key === weekKey) {
-                            const key = `${payload.new.employee}:${payload.new.day_index}`;
-                            this.assignments[key] = payload.new;
-                            this.renderGrid();
-                        } else if (payload.old && payload.old.week_key === weekKey) {
-                            const key = `${payload.old.employee}:${payload.old.day_index}`;
-                            delete this.assignments[key];
-                            this.renderGrid();
+                    .channel('assignments-' + weekKey)
+                    .on(
+                        'postgres_changes',
+                        {
+                            event: '*',
+                            schema: 'public',
+                            table: 'assignments',
+                            filter: 'week_key=eq.' + weekKey
+                        },
+                        (payload) => {
+                            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+                                const row = payload.new;
+                                const key = `${row.employee}:${row.day_index}`;
+                                this.assignments[key] = row;
+                                this.renderGrid();
+                            } else if (payload.eventType === 'DELETE') {
+                                const row = payload.old;
+                                const key = `${row.employee}:${row.day_index}`;
+                                delete this.assignments[key];
+                                this.renderGrid();
+                            }
                         }
-                    })
+                    )
                     .subscribe();
             },
 
-            async updateAssignment(employee, dayIndex, slot) {
+            subscribeToConfirmations() {
+                if (this.confirmationSubscription) {
+                    this.confirmationSubscription.unsubscribe();
+                }
+
                 const weekKey = this.getWeekKey(this.currentWeekStart);
 
-                try {
-                    // Remove existing assignment for this employee on this day
-                    for (const key in this.assignments) {
-                        const [emp, day] = key.split(':');
-                        if (emp === employee && parseInt(day) === dayIndex) {
-                            const oldAssignment = this.assignments[key];
-                            if (oldAssignment.id) {
-                                await this.supabase
-                                    .from('assignments')
-                                    .delete()
-                                    .eq('id', oldAssignment.id);
+                this.confirmationSubscription = this.supabase
+                    .channel('day_off_confirmations-' + weekKey)
+                    .on(
+                        'postgres_changes',
+                        {
+                            event: '*',
+                            schema: 'public',
+                            table: 'day_off_confirmations',
+                            filter: 'week_key=eq.' + weekKey
+                        },
+                        (payload) => {
+                            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+                                const row = payload.new;
+                                const key = `${row.employee}:${row.day_index}`;
+                                this.dayOffConfirmations[key] = row;
+                                this.renderGrid();
+                            } else if (payload.eventType === 'DELETE') {
+                                const row = payload.old;
+                                const key = `${row.employee}:${row.day_index}`;
+                                delete this.dayOffConfirmations[key];
+                                this.renderGrid();
                             }
-                            delete this.assignments[key];
+                        }
+                    )
+                    .subscribe();
+            },
+
+            updateAssignment(employee, dayIndex, slot) {
+                const weekKey = this.getWeekKey(this.currentWeekStart);
+                const key = `${employee}:${dayIndex}:${slot}`;
+
+                // Traccia il cambio localmente (permette doppi turni con chiave univoca per slot)
+                this.pendingChanges[key] = {
+                    employee: employee,
+                    dayIndex: dayIndex,
+                    slot: slot,
+                    weekKey: weekKey
+                };
+
+                // Aggiorna la vista localmente (permette multipli turni nello stesso giorno)
+                this.assignments[key] = {
+                    employee: employee,
+                    day_index: dayIndex,
+                    slot: slot,
+                    week_key: weekKey
+                };
+
+                this.renderGrid();
+                this.showStatus(`${employee} → ${SHIFTS_INFO[slot]} (in sospeso, clicca 📤 per inviare)`, false);
+            },
+
+            async confirmAllChanges() {
+                const weekKey = this.getWeekKey(this.currentWeekStart);
+                const changes = Object.values(this.pendingChanges);
+
+                if (changes.length === 0) {
+                    this.showStatus('Nessun cambio da confermare', false);
+                    return;
+                }
+
+                try {
+                    // Invia tutti i cambiamenti a Supabase
+                    for (const change of changes) {
+                        // Se è un giorno libero: rimuovi tutti i turni della persona per questo giorno
+                        if (change.slot === 'libero') {
+                            await this.supabase
+                                .from('assignments')
+                                .delete()
+                                .eq('employee', change.employee)
+                                .eq('day_index', change.dayIndex)
+                                .eq('week_key', weekKey);
+
+                            // Notifica n8n per il giorno libero
+                            if (REQUIRES_CONFIRMATION.includes(change.employee)) {
+                                this.notifyDayOff(change.employee, change.dayIndex, weekKey);
+                            }
+                        } else {
+                            // Se è un turno di lavoro: rimuovi vecchi turni, poi inserisci il nuovo
+                            await this.supabase
+                                .from('assignments')
+                                .delete()
+                                .eq('employee', change.employee)
+                                .eq('day_index', change.dayIndex)
+                                .eq('week_key', weekKey);
+
+                            await this.supabase
+                                .from('assignments')
+                                .insert([{
+                                    week_key: weekKey,
+                                    day_index: change.dayIndex,
+                                    employee: change.employee,
+                                    slot: change.slot
+                                }]);
                         }
                     }
 
-                    // Insert new assignment
-                    if (slot !== 'libero') {
-                        const { data, error } = await this.supabase
-                            .from('assignments')
-                            .insert([{
-                                week_key: weekKey,
-                                day_index: dayIndex,
-                                employee: employee,
-                                slot: slot
-                            }]);
+                    // Pulisci i cambiamenti pendenti
+                    this.pendingChanges = {};
 
-                        if (error) throw error;
-
-                        const key = `${employee}:${dayIndex}`;
-                        this.assignments[key] = data[0];
-                    }
-
-                    this.renderGrid();
-                    this.showStatus(`${employee} assegnato a ${SHIFTS_INFO[slot]}`, false);
-                } catch (error) {
-                    console.error('Errore nell\'aggiornamento:', error);
-                    this.showStatus('Errore nell\'aggiornamento', true);
+                    // Ricarica la settimana
                     await this.loadWeek();
                     this.renderGrid();
+                    this.showStatus(`✅ ${changes.length} cambio/i confermato/i!`, false);
+                } catch (error) {
+                    console.error('Errore nella conferma:', error);
+                    this.showStatus('Errore nella conferma dei cambiamenti', true);
+                }
+            },
+
+            async notifyDayOff(employee, dayIndex, weekKey) {
+                try {
+                    const response = await fetch(N8N_WEBHOOK_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ week_key: weekKey, day_index: dayIndex, employee: employee })
+                    });
+
+                    if (!response.ok) {
+                        console.error('Errore nella notifica n8n:', response.status);
+                    }
+                } catch (error) {
+                    console.error('Errore nell\'invio della notifica:', error);
+                    this.showStatus('Errore nell\'invio della notifica Telegram', true);
                 }
             },
 
             previousWeek() {
                 this.currentWeekStart.setDate(this.currentWeekStart.getDate() - 7);
                 this.loadWeek().then(() => {
-                    this.subscribeToChanges();
-                    this.render();
+                    this.loadDayOffConfirmations().then(() => {
+                        this.subscribeToChanges();
+                        this.subscribeToConfirmations();
+                        this.render();
+                    });
                 });
             },
 
             nextWeek() {
                 this.currentWeekStart.setDate(this.currentWeekStart.getDate() + 7);
                 this.loadWeek().then(() => {
-                    this.subscribeToChanges();
-                    this.render();
+                    this.loadDayOffConfirmations().then(() => {
+                        this.subscribeToChanges();
+                        this.subscribeToConfirmations();
+                        this.render();
+                    });
                 });
             },
 
             render() {
                 this.updateWeekLabel();
+                this.renderPeople();
                 this.renderGrid();
+            },
+
+            renderPeople() {
+                const peopleList = document.getElementById('peopleList');
+                peopleList.innerHTML = '';
+
+                EMPLOYEES.forEach(employee => {
+                    const card = document.createElement('div');
+                    card.className = `people-card ${employee.toLowerCase()}`;
+                    card.textContent = employee;
+                    card.draggable = true;
+
+                    card.ondragstart = (e) => {
+                        e.dataTransfer.effectAllowed = 'move';
+                        e.dataTransfer.setData('text/plain', employee);
+                        card.classList.add('dragging');
+                    };
+
+                    card.ondragend = () => {
+                        card.classList.remove('dragging');
+                    };
+
+                    peopleList.appendChild(card);
+                });
             },
 
             updateWeekLabel() {
@@ -584,38 +871,51 @@
             const list = document.createElement('div');
             list.className = 'employees-list';
 
-            // Get employees assigned to this slot on this day
+            // Get employees assigned to this slot on this day (permette doppi turni!)
             EMPLOYEES.forEach(employee => {
-                const key = `${employee}:${dayIndex}`;
+                const key = `${employee}:${dayIndex}:${slot}`;
                 const assignment = app.assignments[key];
 
                 if (assignment && assignment.slot === slot) {
                     const card = createEmployeeCard(employee, dayIndex, slot);
-                    list.appendChild(card);
-                } else if (slot === 'libero' && !assignment) {
-                    const card = createEmployeeCard(employee, dayIndex, 'libero');
+
+                    // Se è giorno libero e la persona richiede conferma: aggiungi indicatore
+                    if (slot === 'libero' && REQUIRES_CONFIRMATION.includes(employee)) {
+                        const confirmationKey = `${employee}:${dayIndex}`;
+                        const confirmation = app.dayOffConfirmations[confirmationKey];
+                        if (confirmation) {
+                            const badge = document.createElement('div');
+                            badge.style.cssText = 'position: absolute; top: 2px; right: 2px; font-size: 12px;';
+                            badge.textContent = confirmation.confirmed ? '✅' : '⏳';
+                            card.style.position = 'relative';
+                            card.appendChild(badge);
+                        }
+                    }
+
                     list.appendChild(card);
                 }
             });
 
-            // Add empty state message for non-libero slots
-            if (slot !== 'libero' && list.children.length === 0) {
+            // Add empty state message if no one assigned
+            if (list.children.length === 0) {
                 const empty = document.createElement('div');
                 empty.style.cssText = 'color: #d1d5db; font-size: 12px; text-align: center; padding: 20px 0;';
                 empty.textContent = '—';
                 list.appendChild(empty);
             }
 
-            // Check for overflow
-            const assignedCount = Array.from(list.children).filter(
-                child => child.classList.contains('employee-card')
-            ).length;
+            // Check for overflow (only for non-libero slots)
+            if (slot !== 'libero') {
+                const assignedCount = Array.from(list.children).filter(
+                    child => child.classList.contains('employee-card')
+                ).length;
 
-            if (slot !== 'libero' && assignedCount > 1) {
-                const badge = document.createElement('div');
-                badge.className = 'overflow-badge';
-                badge.textContent = `+${assignedCount - 1}`;
-                cell.appendChild(badge);
+                if (assignedCount > 1) {
+                    const badge = document.createElement('div');
+                    badge.className = 'overflow-badge';
+                    badge.textContent = `+${assignedCount - 1}`;
+                    cell.appendChild(badge);
+                }
             }
 
             cell.appendChild(list);
@@ -656,6 +956,15 @@
                 card.classList.remove('dragging');
             };
 
+            // Doppio click per rimuovere da questo turno
+            card.ondblclick = () => {
+                const key = `${employee}:${dayIndex}:${slot}`;
+                delete app.pendingChanges[key];
+                delete app.assignments[key];
+                app.renderGrid();
+                app.showStatus(`${employee} rimosso da ${SHIFTS_INFO[slot]}`, false);
+            };
+
             // Touch fallback for mobile
             card.ontouchstart = () => {
                 card.style.opacity = '0.5';
@@ -671,6 +980,11 @@
         // ===== INIT =====
         document.addEventListener('DOMContentLoaded', () => {
             app.init();
+
+            // Event listener per pulsante conferma
+            document.getElementById('confirmBtn').addEventListener('click', () => {
+                app.confirmAllChanges();
+            });
         });
     </script>
 </body>
