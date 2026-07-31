@@ -688,8 +688,8 @@
                     this.renderGrid();
                     this.showStatus(`✅ ${changes.length} cambio/i confermato/i!`, false);
 
-                    // Apri WhatsApp con il planning
-                    setTimeout(() => this.sendToWhatsApp(), 500);
+                    // Apri WhatsApp con il planning (attendi che tutti i dati siano carichi)
+                    setTimeout(() => this.sendToWhatsApp(), 1000);
                 } catch (error) {
                     console.error('Errore nella conferma:', error);
                     this.showStatus('Errore nella conferma dei cambiamenti', true);
@@ -704,25 +704,32 @@
                 const slots = {
                     'mattina': '08:00–15:00',
                     'pomeriggio': '15:00–22:00',
-                    'sera': '18:00–22:00',
-                    'libero': 'Giorno libero'
+                    'sera': '18:00–22:00'
                 };
 
                 for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
                     const dayName = days[dayIndex];
                     message += `*${dayName}*\n`;
 
+                    // Raccogli chi ha turni questo giorno
+                    const peopleWithShifts = new Set();
+
                     for (const slotName of ['mattina', 'pomeriggio', 'sera']) {
-                        const key = `${EMPLOYEES.find(e => {
-                            const k = `${e}:${dayIndex}:${slotName}`;
-                            return this.assignments[k];
-                        })}:${dayIndex}:${slotName}`;
+                        const assignment = Object.values(this.assignments).find(
+                            a => a.day_index === dayIndex && a.slot === slotName && a.week_key === weekKey
+                        );
 
-                        const assignment = this.assignments[key];
-                        const person = assignment ? assignment.employee : 'LIBERO';
-                        const time = slots[slotName];
+                        if (assignment) {
+                            peopleWithShifts.add(assignment.employee);
+                            const time = slots[slotName];
+                            message += `  • ${slotName.charAt(0).toUpperCase() + slotName.slice(1)} (${time}): ${assignment.employee}\n`;
+                        }
+                    }
 
-                        message += `  • ${slotName.charAt(0).toUpperCase() + slotName.slice(1)} (${time}): ${person}\n`;
+                    // Calcola chi è libero (non ha turni)
+                    const freeEmployees = EMPLOYEES.filter(emp => !peopleWithShifts.has(emp));
+                    if (freeEmployees.length > 0) {
+                        message += `Libero: ${freeEmployees.join(' e ')}\n`;
                     }
 
                     message += '\n';
