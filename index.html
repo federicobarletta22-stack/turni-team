@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- VERSION: v1.1.0 - 2026-07-31 - FIXED: DELETE by ID per evitare conflitti Supabase -->
+<!-- VERSION: v1.2.0 - 2026-07-31 - UX: Due bottoni separati (Salva + Invia WhatsApp) -->
 <html lang="it">
 <head>
     <meta charset="UTF-8">
@@ -388,7 +388,10 @@
         <div class="people-section">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                 <h2 style="margin: 0;">👥 Persone Disponibili</h2>
-                <button id="confirmBtn" style="padding: 10px 20px; background: #10B981; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 14px;">💬 Invia a WhatsApp</button>
+                <div style="display: flex; gap: 10px;">
+                    <button id="saveBtn" style="padding: 10px 20px; background: #3B82F6; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 14px; transition: all 0.2s;">✅ Salva calendario</button>
+                    <button id="sendWhatsAppBtn" style="padding: 10px 20px; background: #10B981; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: not-allowed; font-size: 14px; opacity: 0.5; transition: all 0.2s;" disabled>💬 Invia a WhatsApp</button>
+                </div>
             </div>
             <div class="people-list" id="peopleList"></div>
         </div>
@@ -418,7 +421,7 @@
     </div>
 
     <div class="status" id="status"></div>
-    <div class="version-badge">v1.1.0</div>
+    <div class="version-badge">v1.2.0</div>
 
     <script>
         // ===== CONFIG =====
@@ -779,11 +782,14 @@
                     this.subscribeToConfirmations();
 
                     this.renderGrid();
-                    this.showStatus(`✅ ${changes.length} cambio/i confermato/i!`, false);
+                    this.showStatus(`✅ ${changes.length} cambio/i confermato/i! Clicca "Invia a WhatsApp" per condividere`, false);
 
-                    // Apri WhatsApp con il planning (attendi che tutti i dati siano carichi)
-                    console.log('[CONFIRM] Opening WhatsApp...');
-                    setTimeout(() => this.sendToWhatsApp(), 500);
+                    // Abilita il bottone "Invia a WhatsApp"
+                    console.log('[CONFIRM] Enabling WhatsApp button...');
+                    const whatsappBtn = document.getElementById('sendWhatsAppBtn');
+                    whatsappBtn.disabled = false;
+                    whatsappBtn.style.opacity = '1';
+                    whatsappBtn.style.cursor = 'pointer';
                 } catch (error) {
                     console.error('Errore nella conferma:', error);
                     this.showStatus('Errore nella conferma dei cambiamenti', true);
@@ -1113,8 +1119,12 @@
             app.init();
 
             // Event listener per pulsante conferma
-            document.getElementById('confirmBtn').addEventListener('click', () => {
+            document.getElementById('saveBtn').addEventListener('click', () => {
                 app.confirmAllChanges();
+            });
+
+            document.getElementById('sendWhatsAppBtn').addEventListener('click', () => {
+                app.sendToWhatsApp();
             });
         });
     </script>
