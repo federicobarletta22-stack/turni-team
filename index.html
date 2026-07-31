@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- VERSION: v1.0.3 - 2026-07-31 - Debug: logging completo per turni e liberi -->
+<!-- VERSION: v1.0.4 - 2026-07-31 - Fix: delay per Supabase + logging salvataggio -->
 <html lang="it">
 <head>
     <meta charset="UTF-8">
@@ -418,7 +418,7 @@
     </div>
 
     <div class="status" id="status"></div>
-    <div class="version-badge">v1.0.3</div>
+    <div class="version-badge">v1.0.4</div>
 
     <script>
         // ===== CONFIG =====
@@ -736,13 +736,19 @@
                     // Pulisci i cambiamenti pendenti
                     this.pendingChanges = {};
 
+                    // Aspetta che Supabase processi tutti i dati (DELETE + INSERT)
+                    console.log('[CONFIRM] Waiting for Supabase to process changes...');
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+
                     // Ricarica la settimana
+                    console.log('[CONFIRM] Reloading data from Supabase...');
                     await this.loadWeek();
                     this.renderGrid();
                     this.showStatus(`✅ ${changes.length} cambio/i confermato/i!`, false);
 
                     // Apri WhatsApp con il planning (attendi che tutti i dati siano carichi)
-                    setTimeout(() => this.sendToWhatsApp(), 1000);
+                    console.log('[CONFIRM] Opening WhatsApp...');
+                    setTimeout(() => this.sendToWhatsApp(), 500);
                 } catch (error) {
                     console.error('Errore nella conferma:', error);
                     this.showStatus('Errore nella conferma dei cambiamenti', true);
