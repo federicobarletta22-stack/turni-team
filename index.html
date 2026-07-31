@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- VERSION: v1.0.0 - 2026-07-31 -->
+<!-- VERSION: v1.0.1 - 2026-07-31 - Fix: salva i giorni liberi a Supabase -->
 <html lang="it">
 <head>
     <meta charset="UTF-8">
@@ -418,7 +418,7 @@
     </div>
 
     <div class="status" id="status"></div>
-    <div class="version-badge">v1.0.0</div>
+    <div class="version-badge">v1.0.1</div>
 
     <script>
         // ===== CONFIG =====
@@ -674,6 +674,16 @@
                                 .eq('employee', change.employee)
                                 .eq('day_index', change.dayIndex)
                                 .eq('week_key', weekKey);
+
+                            // Inserisci il record di "libero" per salvare che è libero quel giorno
+                            await this.supabase
+                                .from('assignments')
+                                .insert([{
+                                    week_key: weekKey,
+                                    day_index: change.dayIndex,
+                                    employee: change.employee,
+                                    slot: 'libero'
+                                }]);
 
                         } else {
                             // Se è un turno di lavoro: rimuovi vecchi turni, poi inserisci il nuovo
