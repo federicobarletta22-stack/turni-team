@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- VERSION: v1.3.0 - 2026-07-31 - FIX: Consenti doppi turni, cancella solo lo STESSO slot -->
+<!-- VERSION: v1.3.1 - 2026-07-31 - FIX: Mostra "Libero:" solo se c'è record esplicito -->
 <html lang="it">
 <head>
     <meta charset="UTF-8">
@@ -421,7 +421,7 @@
     </div>
 
     <div class="status" id="status"></div>
-    <div class="version-badge">v1.3.0</div>
+    <div class="version-badge">v1.3.1</div>
 
     <script>
         // ===== CONFIG =====
@@ -837,8 +837,18 @@
                         }
                     }
 
-                    // Calcola chi è libero (non ha turni)
-                    const freeEmployees = EMPLOYEES.filter(emp => !peopleWithShifts.has(emp));
+                    // Raccogli chi ha un record ESPLICITO di "libero"
+                    const freeEmployees = [];
+                    for (const employee of EMPLOYEES) {
+                        const hasFreeRecord = Object.values(this.assignments).find(
+                            a => a.employee === employee && a.day_index === dayIndex && a.slot === 'libero' && a.week_key === weekKey
+                        );
+                        if (hasFreeRecord) {
+                            freeEmployees.push(employee);
+                        }
+                    }
+
+                    // Mostra "Libero:" SOLO se c'è un record esplicito di libero
                     if (freeEmployees.length > 0) {
                         message += `Libero: ${freeEmployees.join(' e ')}\n`;
                     }
