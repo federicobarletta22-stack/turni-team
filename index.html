@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- VERSION: v1.0.2 - 2026-07-31 - Debug: logging per errori di salvataggio -->
+<!-- VERSION: v1.0.3 - 2026-07-31 - Debug: logging completo per turni e liberi -->
 <html lang="it">
 <head>
     <meta charset="UTF-8">
@@ -418,7 +418,7 @@
     </div>
 
     <div class="status" id="status"></div>
-    <div class="version-badge">v1.0.2</div>
+    <div class="version-badge">v1.0.3</div>
 
     <script>
         // ===== CONFIG =====
@@ -701,14 +701,23 @@
 
                         } else {
                             // Se è un turno di lavoro: rimuovi vecchi turni, poi inserisci il nuovo
-                            await this.supabase
+                            console.log(`[TURNO] Deleting old shifts for ${change.employee} on day ${change.dayIndex}`);
+
+                            const { error: deleteError } = await this.supabase
                                 .from('assignments')
                                 .delete()
                                 .eq('employee', change.employee)
                                 .eq('day_index', change.dayIndex)
                                 .eq('week_key', weekKey);
 
-                            await this.supabase
+                            if (deleteError) {
+                                console.error('[TURNO] DELETE error:', deleteError);
+                                throw deleteError;
+                            }
+
+                            console.log(`[TURNO] Inserting new shift: ${change.employee} → ${change.slot} on day ${change.dayIndex}`);
+
+                            const { error: insertError } = await this.supabase
                                 .from('assignments')
                                 .insert([{
                                     week_key: weekKey,
@@ -716,6 +725,11 @@
                                     employee: change.employee,
                                     slot: change.slot
                                 }]);
+
+                            if (insertError) {
+                                console.error('[TURNO] INSERT error:', insertError);
+                                throw insertError;
+                            }
                         }
                     }
 
