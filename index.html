@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- VERSION: v1.2.0 - 2026-07-31 - UX: Due bottoni separati (Salva + Invia WhatsApp) -->
+<!-- VERSION: v1.2.1 - 2026-07-31 - Debug: VERIFICA che il record sia in Supabase -->
 <html lang="it">
 <head>
     <meta charset="UTF-8">
@@ -421,7 +421,7 @@
     </div>
 
     <div class="status" id="status"></div>
-    <div class="version-badge">v1.2.0</div>
+    <div class="version-badge">v1.2.1</div>
 
     <script>
         // ===== CONFIG =====
@@ -761,6 +761,14 @@
                                 console.error('[TURNO] INSERT ERROR DETECTED:', JSON.stringify(insertError));
                                 throw insertError;
                             }
+
+                            // VERIFICA SUBITO che il record sia in Supabase!
+                            const { data: verifyRecord } = await this.supabase
+                                .from('assignments')
+                                .select('*')
+                                .eq('id', insertData[0].id);
+
+                            console.log(`[TURNO] VERIFICATION: Record in Supabase?`, verifyRecord ? 'YES' : 'NO', verifyRecord);
                         }
                     }
 
