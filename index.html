@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- VERSION: v1.2.1 - 2026-07-31 - Debug: VERIFICA che il record sia in Supabase -->
+<!-- VERSION: v1.3.0 - 2026-07-31 - FIX: Consenti doppi turni, cancella solo lo STESSO slot -->
 <html lang="it">
 <head>
     <meta charset="UTF-8">
@@ -421,7 +421,7 @@
     </div>
 
     <div class="status" id="status"></div>
-    <div class="version-badge">v1.2.1</div>
+    <div class="version-badge">v1.3.0</div>
 
     <script>
         // ===== CONFIG =====
@@ -717,29 +717,32 @@
                             // Se è un turno di lavoro: cancella SOLO il vecchio slot, poi inserisci il nuovo
                             console.log(`[TURNO] Processing shift for ${change.employee} → ${change.slot} on day ${change.dayIndex}`);
 
-                            // STEP 1: Trova e cancella il vecchio record (se esiste)
-                            const { data: oldRecords } = await this.supabase
+                            // STEP 1: Cancella SOLO il vecchio record dello STESSO slot (per permettere doppi turni!)
+                            console.log(`[TURNO] Checking if ${change.employee} already has ${change.slot} on day ${change.dayIndex}...`);
+
+                            const { data: existingRecord } = await this.supabase
                                 .from('assignments')
                                 .select('*')
                                 .eq('employee', change.employee)
                                 .eq('day_index', change.dayIndex)
+                                .eq('slot', change.slot)
                                 .eq('week_key', weekKey)
-                                .neq('slot', 'libero');  // Escludi i "libero" dal delete
+                                .single();
 
-                            if (oldRecords && oldRecords.length > 0) {
-                                console.log(`[TURNO] Found ${oldRecords.length} old records, deleting...`);
+                            // Se il record dello stesso slot esiste già, cancellalo prima di re-inserirlo
+                            if (existingRecord) {
+                                console.log(`[TURNO] Record già esiste, lo cancello per re-inserirlo...`);
+                                const { error: deleteError } = await this.supabase
+                                    .from('assignments')
+                                    .delete()
+                                    .eq('id', existingRecord.id);
 
-                                for (const oldRecord of oldRecords) {
-                                    const { error: deleteError } = await this.supabase
-                                        .from('assignments')
-                                        .delete()
-                                        .eq('id', oldRecord.id);  // Delete by ID per essere precisi!
-
-                                    if (deleteError) {
-                                        console.error('[TURNO] DELETE error:', deleteError);
-                                        throw deleteError;
-                                    }
+                                if (deleteError) {
+                                    console.error('[TURNO] DELETE error:', deleteError);
+                                    throw deleteError;
                                 }
+                            } else {
+                                console.log(`[TURNO] Nessun record esistente di ${change.employee}:${change.slot} per questo giorno`);
                             }
 
                             // STEP 2: Inserisci il nuovo record
