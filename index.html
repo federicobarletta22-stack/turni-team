@@ -516,7 +516,7 @@
                         if (error) throw error;
 
                         defaultRecords.forEach(row => {
-                            const key = `${row.employee}:${row.day_index}`;
+                            const key = `${row.employee}:${row.day_index}:${row.slot}`;
                             this.assignments[key] = row;
                         });
                     }
