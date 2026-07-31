@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- VERSION: v1.0.8 - 2026-07-31 - Debug: SELECT prima/dopo DELETE/INSERT -->
+<!-- VERSION: v1.0.9 - 2026-07-31 - Fix: aumenta delay a 4 secondi per Supabase visibility -->
 <html lang="it">
 <head>
     <meta charset="UTF-8">
@@ -418,7 +418,7 @@
     </div>
 
     <div class="status" id="status"></div>
-    <div class="version-badge">v1.0.8</div>
+    <div class="version-badge">v1.0.9</div>
 
     <script>
         // ===== CONFIG =====
@@ -775,8 +775,9 @@
                     this.pendingChanges = {};
 
                     // Aspetta che Supabase processi tutti i dati (DELETE + INSERT)
-                    console.log('[CONFIRM] Waiting for Supabase to process changes...');
-                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    // Supabase ha bisogno di tempo per rendere i dati visibili nelle SELECT
+                    console.log('[CONFIRM] Waiting for Supabase to process changes... (4 seconds)');
+                    await new Promise(resolve => setTimeout(resolve, 4000));
 
                     // Ricarica la settimana
                     console.log('[CONFIRM] Reloading data from Supabase...');
