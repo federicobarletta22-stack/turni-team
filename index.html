@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- VERSION: v1.0.10 - 2026-07-31 - FIX FINALE: INSERT prima di DELETE + filtro slot -->
+<!-- VERSION: v1.1.0 - 2026-07-31 - FIXED: DELETE by ID per evitare conflitti Supabase -->
 <html lang="it">
 <head>
     <meta charset="UTF-8">
@@ -418,7 +418,7 @@
     </div>
 
     <div class="status" id="status"></div>
-    <div class="version-badge">v1.0.10</div>
+    <div class="version-badge">v1.1.0</div>
 
     <script>
         // ===== CONFIG =====
@@ -711,11 +711,36 @@
                             }
 
                         } else {
-                            // Se è un turno di lavoro: PRIMA inserisci il nuovo, POI rimuovi i vecchi
-                            // (ordine inverso per evitare che DELETE cancelli il nuovo record)
-                            console.log(`[TURNO] Inserting new shift: ${change.employee} → ${change.slot} on day ${change.dayIndex}`);
+                            // Se è un turno di lavoro: cancella SOLO il vecchio slot, poi inserisci il nuovo
+                            console.log(`[TURNO] Processing shift for ${change.employee} → ${change.slot} on day ${change.dayIndex}`);
 
-                            console.log(`[TURNO] About to INSERT: ${JSON.stringify({week_key: weekKey, day_index: change.dayIndex, employee: change.employee, slot: change.slot})}`);
+                            // STEP 1: Trova e cancella il vecchio record (se esiste)
+                            const { data: oldRecords } = await this.supabase
+                                .from('assignments')
+                                .select('*')
+                                .eq('employee', change.employee)
+                                .eq('day_index', change.dayIndex)
+                                .eq('week_key', weekKey)
+                                .neq('slot', 'libero');  // Escludi i "libero" dal delete
+
+                            if (oldRecords && oldRecords.length > 0) {
+                                console.log(`[TURNO] Found ${oldRecords.length} old records, deleting...`);
+
+                                for (const oldRecord of oldRecords) {
+                                    const { error: deleteError } = await this.supabase
+                                        .from('assignments')
+                                        .delete()
+                                        .eq('id', oldRecord.id);  // Delete by ID per essere precisi!
+
+                                    if (deleteError) {
+                                        console.error('[TURNO] DELETE error:', deleteError);
+                                        throw deleteError;
+                                    }
+                                }
+                            }
+
+                            // STEP 2: Inserisci il nuovo record
+                            console.log(`[TURNO] Inserting new shift: ${change.employee} → ${change.slot}`);
 
                             const { data: insertData, error: insertError } = await this.supabase
                                 .from('assignments')
@@ -732,24 +757,6 @@
                             if (insertError) {
                                 console.error('[TURNO] INSERT ERROR DETECTED:', JSON.stringify(insertError));
                                 throw insertError;
-                            }
-
-                            // ORA cancella i vecchi turni (DELETE after INSERT è più sicuro)
-                            console.log(`[TURNO] Deleting old shifts for ${change.employee} on day ${change.dayIndex}`);
-
-                            const { error: deleteError, count } = await this.supabase
-                                .from('assignments')
-                                .delete()
-                                .eq('employee', change.employee)
-                                .eq('day_index', change.dayIndex)
-                                .neq('slot', change.slot)  // Cancella solo i vecchi slot, non il nuovo!
-                                .eq('week_key', weekKey);
-
-                            console.log(`[TURNO] DELETE result - count: ${count}, error:`, deleteError);
-
-                            if (deleteError) {
-                                console.error('[TURNO] DELETE error:', deleteError);
-                                throw deleteError;
                             }
                         }
                     }
