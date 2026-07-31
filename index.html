@@ -374,7 +374,7 @@
         <div class="people-section">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                 <h2 style="margin: 0;">👥 Persone Disponibili</h2>
-                <button id="confirmBtn" style="padding: 10px 20px; background: #10B981; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 14px;">📤 Invia notifiche al team</button>
+                <button id="confirmBtn" style="padding: 10px 20px; background: #10B981; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 14px;">💬 Invia a WhatsApp</button>
             </div>
             <div class="people-list" id="peopleList"></div>
         </div>
@@ -660,10 +660,6 @@
                                 .eq('day_index', change.dayIndex)
                                 .eq('week_key', weekKey);
 
-                            // Notifica n8n per il giorno libero
-                            if (REQUIRES_CONFIRMATION.includes(change.employee)) {
-                                this.notifyDayOff(change.employee, change.dayIndex, weekKey);
-                            }
                         } else {
                             // Se è un turno di lavoro: rimuovi vecchi turni, poi inserisci il nuovo
                             await this.supabase
@@ -691,26 +687,60 @@
                     await this.loadWeek();
                     this.renderGrid();
                     this.showStatus(`✅ ${changes.length} cambio/i confermato/i!`, false);
+
+                    // Apri WhatsApp con il planning
+                    setTimeout(() => this.sendToWhatsApp(), 500);
                 } catch (error) {
                     console.error('Errore nella conferma:', error);
                     this.showStatus('Errore nella conferma dei cambiamenti', true);
                 }
             },
 
-            async notifyDayOff(employee, dayIndex, weekKey) {
-                try {
-                    const response = await fetch(N8N_WEBHOOK_URL, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ week_key: weekKey, day_index: dayIndex, employee: employee })
-                    });
+            async formatWeeklySchedule() {
+                const weekKey = this.getWeekKey(this.currentWeekStart);
+                let message = `📅 *PLANNING SETTIMANALE - ${weekKey}*\n\n`;
 
-                    if (!response.ok) {
-                        console.error('Errore nella notifica n8n:', response.status);
+                const days = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
+                const slots = {
+                    'mattina': '08:00–15:00',
+                    'pomeriggio': '15:00–22:00',
+                    'sera': '18:00–22:00',
+                    'libero': 'Giorno libero'
+                };
+
+                for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+                    const dayName = days[dayIndex];
+                    message += `*${dayName}*\n`;
+
+                    for (const slotName of ['mattina', 'pomeriggio', 'sera']) {
+                        const key = `${EMPLOYEES.find(e => {
+                            const k = `${e}:${dayIndex}:${slotName}`;
+                            return this.assignments[k];
+                        })}:${dayIndex}:${slotName}`;
+
+                        const assignment = this.assignments[key];
+                        const person = assignment ? assignment.employee : 'LIBERO';
+                        const time = slots[slotName];
+
+                        message += `  • ${slotName.charAt(0).toUpperCase() + slotName.slice(1)} (${time}): ${person}\n`;
                     }
+
+                    message += '\n';
+                }
+
+                return message;
+            },
+
+            async sendToWhatsApp() {
+                try {
+                    const message = await this.formatWeeklySchedule();
+                    const encodedMessage = encodeURIComponent(message);
+                    const whatsappUrl = `https://wa.me/?text=${encodedMessage}`;
+                    window.open(whatsappUrl, '_blank');
+                    this.showStatus('✅ WhatsApp aperto con il planning settimanale', false);
                 } catch (error) {
-                    console.error('Errore nell\'invio della notifica:', error);
-                    this.showStatus('Errore nell\'invio della notifica Telegram', true);
+                    console.error('Errore:', error);
+                    this.showStatus('Errore nella preparazione del messaggio', true);
                 }
             },
 
