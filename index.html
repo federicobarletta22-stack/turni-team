@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- VERSION: v1.0.6 - 2026-07-31 - Debug: logging dettagliato loadWeek -->
+<!-- VERSION: v1.0.7 - 2026-07-31 - Debug: cattura errori INSERT -->
 <html lang="it">
 <head>
     <meta charset="UTF-8">
@@ -418,7 +418,7 @@
     </div>
 
     <div class="status" id="status"></div>
-    <div class="version-badge">v1.0.6</div>
+    <div class="version-badge">v1.0.7</div>
 
     <script>
         // ===== CONFIG =====
@@ -728,7 +728,9 @@
 
                             console.log(`[TURNO] Inserting new shift: ${change.employee} → ${change.slot} on day ${change.dayIndex}`);
 
-                            const { error: insertError } = await this.supabase
+                            console.log(`[TURNO] About to INSERT: ${JSON.stringify({week_key: weekKey, day_index: change.dayIndex, employee: change.employee, slot: change.slot})}`);
+
+                            const { data: insertData, error: insertError } = await this.supabase
                                 .from('assignments')
                                 .insert([{
                                     week_key: weekKey,
@@ -737,8 +739,10 @@
                                     slot: change.slot
                                 }]);
 
+                            console.log(`[TURNO] INSERT response - data:`, insertData, 'error:', insertError);
+
                             if (insertError) {
-                                console.error('[TURNO] INSERT error:', insertError);
+                                console.error('[TURNO] INSERT ERROR DETECTED:', JSON.stringify(insertError));
                                 throw insertError;
                             }
                         }
