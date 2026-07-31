@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- VERSION: v1.0.1 - 2026-07-31 - Fix: salva i giorni liberi a Supabase -->
+<!-- VERSION: v1.0.2 - 2026-07-31 - Debug: logging per errori di salvataggio -->
 <html lang="it">
 <head>
     <meta charset="UTF-8">
@@ -418,7 +418,7 @@
     </div>
 
     <div class="status" id="status"></div>
-    <div class="version-badge">v1.0.1</div>
+    <div class="version-badge">v1.0.2</div>
 
     <script>
         // ===== CONFIG =====
@@ -668,15 +668,24 @@
                     for (const change of changes) {
                         // Se è un giorno libero: rimuovi tutti i turni della persona per questo giorno
                         if (change.slot === 'libero') {
-                            await this.supabase
+                            console.log(`[LIBERO] Deleting all shifts for ${change.employee} on day ${change.dayIndex}`);
+
+                            const { error: deleteError } = await this.supabase
                                 .from('assignments')
                                 .delete()
                                 .eq('employee', change.employee)
                                 .eq('day_index', change.dayIndex)
                                 .eq('week_key', weekKey);
 
+                            if (deleteError) {
+                                console.error('DELETE error:', deleteError);
+                                throw deleteError;
+                            }
+
                             // Inserisci il record di "libero" per salvare che è libero quel giorno
-                            await this.supabase
+                            console.log(`[LIBERO] Inserting free day for ${change.employee} on day ${change.dayIndex}`);
+
+                            const { error: insertError } = await this.supabase
                                 .from('assignments')
                                 .insert([{
                                     week_key: weekKey,
@@ -684,6 +693,11 @@
                                     employee: change.employee,
                                     slot: 'libero'
                                 }]);
+
+                            if (insertError) {
+                                console.error('INSERT error:', insertError);
+                                throw insertError;
+                            }
 
                         } else {
                             // Se è un turno di lavoro: rimuovi vecchi turni, poi inserisci il nuovo
