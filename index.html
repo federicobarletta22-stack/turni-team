@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- VERSION: v1.4.0 - 2026-07-31 - FIX: Traccia slot quando trascini, cancella il vecchio -->
+<!-- VERSION: v1.5.0 - 2026-07-31 - FIX FINALE: Cancella CHIUNQUE ALTRO dallo slot prima di inserire -->
 <html lang="it">
 <head>
     <meta charset="UTF-8">
@@ -421,7 +421,7 @@
     </div>
 
     <div class="status" id="status"></div>
-    <div class="version-badge">v1.4.0</div>
+    <div class="version-badge">v1.5.0</div>
 
     <script>
         // ===== CONFIG =====
@@ -714,13 +714,31 @@
                             }
 
                         } else {
-                            // Se è un turno di lavoro: cancella SOLO il vecchio slot, poi inserisci il nuovo
+                            // Se è un turno di lavoro: cancella CHIUNQUE ALTRO dallo STESSO slot, poi inserisci il nuovo
                             console.log(`[TURNO] Processing shift for ${change.employee} → ${change.slot} on day ${change.dayIndex}`);
 
-                            // STEP 1: Cancella SOLO il vecchio record dello STESSO slot (per permettere doppi turni!)
-                            console.log(`[TURNO] Checking if ${change.employee} already has ${change.slot} on day ${change.dayIndex}...`);
+                            // STEP 1: Cancella TUTTI gli altri employee dallo STESSO slot/day (per evitare duplicati!)
+                            const { data: otherRecords } = await this.supabase
+                                .from('assignments')
+                                .select('*')
+                                .eq('day_index', change.dayIndex)
+                                .eq('slot', change.slot)
+                                .eq('week_key', weekKey)
+                                .neq('employee', change.employee);  // Esclude il nuovo employee
 
-                            const { data: existingRecord } = await this.supabase
+                            if (otherRecords && otherRecords.length > 0) {
+                                console.log(`[TURNO] Removing ${otherRecords.length} other employees from ${change.slot}...`);
+                                for (const record of otherRecords) {
+                                    const { error: deleteError } = await this.supabase
+                                        .from('assignments')
+                                        .delete()
+                                        .eq('id', record.id);
+                                    if (deleteError) throw deleteError;
+                                }
+                            }
+
+                            // STEP 1b: Cancella il record dello STESSO employee/slot se esiste (per evitare duplicati di se stesso)
+                            const { data: duplicateRecord } = await this.supabase
                                 .from('assignments')
                                 .select('*')
                                 .eq('employee', change.employee)
@@ -729,20 +747,13 @@
                                 .eq('week_key', weekKey)
                                 .single();
 
-                            // Se il record dello stesso slot esiste già, cancellalo prima di re-inserirlo
-                            if (existingRecord) {
-                                console.log(`[TURNO] Record già esiste, lo cancello per re-inserirlo...`);
+                            if (duplicateRecord) {
+                                console.log(`[TURNO] Deleting duplicate record...`);
                                 const { error: deleteError } = await this.supabase
                                     .from('assignments')
                                     .delete()
-                                    .eq('id', existingRecord.id);
-
-                                if (deleteError) {
-                                    console.error('[TURNO] DELETE error:', deleteError);
-                                    throw deleteError;
-                                }
-                            } else {
-                                console.log(`[TURNO] Nessun record esistente di ${change.employee}:${change.slot} per questo giorno`);
+                                    .eq('id', duplicateRecord.id);
+                                if (deleteError) throw deleteError;
                             }
 
                             // STEP 2: Inserisci il nuovo record
