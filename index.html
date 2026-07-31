@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- VERSION: v1.0.5 - 2026-07-31 - Fix: disabilita realtime durante salvataggio -->
+<!-- VERSION: v1.0.6 - 2026-07-31 - Debug: logging dettagliato loadWeek -->
 <html lang="it">
 <head>
     <meta charset="UTF-8">
@@ -418,7 +418,7 @@
     </div>
 
     <div class="status" id="status"></div>
-    <div class="version-badge">v1.0.5</div>
+    <div class="version-badge">v1.0.6</div>
 
     <script>
         // ===== CONFIG =====
@@ -470,12 +470,18 @@
             async loadWeek() {
                 const weekKey = this.getWeekKey(this.currentWeekStart);
                 try {
+                    console.log(`[LOADWEEK] Loading data for week ${weekKey}`);
                     const { data, error } = await this.supabase
                         .from('assignments')
                         .select('*')
                         .eq('week_key', weekKey);
 
                     if (error) throw error;
+
+                    console.log(`[LOADWEEK] Loaded ${data ? data.length : 0} records`);
+                    if (data && data.length > 0) {
+                        console.log('[LOADWEEK] Records:', JSON.stringify(data.slice(0, 5)));
+                    }
 
                     this.assignments = {};
 
