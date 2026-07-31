@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- VERSION: v1.0.7 - 2026-07-31 - Debug: cattura errori INSERT -->
+<!-- VERSION: v1.0.8 - 2026-07-31 - Debug: SELECT prima/dopo DELETE/INSERT -->
 <html lang="it">
 <head>
     <meta charset="UTF-8">
@@ -418,7 +418,7 @@
     </div>
 
     <div class="status" id="status"></div>
-    <div class="version-badge">v1.0.7</div>
+    <div class="version-badge">v1.0.8</div>
 
     <script>
         // ===== CONFIG =====
@@ -714,12 +714,24 @@
                             // Se è un turno di lavoro: rimuovi vecchi turni, poi inserisci il nuovo
                             console.log(`[TURNO] Deleting old shifts for ${change.employee} on day ${change.dayIndex}`);
 
-                            const { error: deleteError } = await this.supabase
+                            // Prima, verifica quanti record ci sono
+                            const { data: beforeDelete } = await this.supabase
+                                .from('assignments')
+                                .select('*')
+                                .eq('employee', change.employee)
+                                .eq('day_index', change.dayIndex)
+                                .eq('week_key', weekKey);
+
+                            console.log(`[TURNO] Before DELETE: found ${beforeDelete ? beforeDelete.length : 0} records`);
+
+                            const { error: deleteError, count } = await this.supabase
                                 .from('assignments')
                                 .delete()
                                 .eq('employee', change.employee)
                                 .eq('day_index', change.dayIndex)
                                 .eq('week_key', weekKey);
+
+                            console.log(`[TURNO] DELETE result - count: ${count}, error:`, deleteError);
 
                             if (deleteError) {
                                 console.error('[TURNO] DELETE error:', deleteError);
@@ -737,9 +749,20 @@
                                     day_index: change.dayIndex,
                                     employee: change.employee,
                                     slot: change.slot
-                                }]);
+                                }])
+                                .select();
 
                             console.log(`[TURNO] INSERT response - data:`, insertData, 'error:', insertError);
+
+                            // Verifica subito che il record sia stato creato
+                            const { data: afterInsert } = await this.supabase
+                                .from('assignments')
+                                .select('*')
+                                .eq('employee', change.employee)
+                                .eq('day_index', change.dayIndex)
+                                .eq('week_key', weekKey);
+
+                            console.log(`[TURNO] After INSERT: found ${afterInsert ? afterInsert.length : 0} records`, afterInsert);
 
                             if (insertError) {
                                 console.error('[TURNO] INSERT ERROR DETECTED:', JSON.stringify(insertError));
