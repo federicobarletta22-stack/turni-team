@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- VERSION: v1.3.1 - 2026-07-31 - FIX: Mostra "Libero:" solo se c'è record esplicito -->
+<!-- VERSION: v1.4.0 - 2026-07-31 - FIX: Traccia slot quando trascini, cancella il vecchio -->
 <html lang="it">
 <head>
     <meta charset="UTF-8">
@@ -421,7 +421,7 @@
     </div>
 
     <div class="status" id="status"></div>
-    <div class="version-badge">v1.3.1</div>
+    <div class="version-badge">v1.4.0</div>
 
     <script>
         // ===== CONFIG =====
@@ -912,7 +912,8 @@
 
                     card.ondragstart = (e) => {
                         e.dataTransfer.effectAllowed = 'move';
-                        e.dataTransfer.setData('text/plain', employee);
+                        // Passa JSON con employee + slot: null (perché viene da "Persone Disponibili")
+                        e.dataTransfer.setData('text/plain', JSON.stringify({employee, slot: null}));
                         card.classList.add('dragging');
                     };
 
@@ -1091,7 +1092,19 @@
             cell.ondrop = (e) => {
                 e.preventDefault();
                 cell.classList.remove('drop-active');
-                const employee = e.dataTransfer.getData('text/plain');
+
+                const dragData = JSON.parse(e.dataTransfer.getData('text/plain'));
+                const employee = dragData.employee;
+                const oldSlot = dragData.slot;
+
+                // Se lo slot è cambiato, cancella il vecchio assegnamento
+                if (oldSlot !== slot) {
+                    const oldKey = `${employee}:${dayIndex}:${oldSlot}`;
+                    delete app.pendingChanges[oldKey];
+                    delete app.assignments[oldKey];
+                    console.log(`[DROP] Removed ${employee} from ${oldSlot}`);
+                }
+
                 app.updateAssignment(employee, dayIndex, slot);
             };
 
@@ -1106,7 +1119,8 @@
 
             card.ondragstart = (e) => {
                 e.dataTransfer.effectAllowed = 'move';
-                e.dataTransfer.setData('text/plain', employee);
+                // Passa employee + slot (vecchio) per tracciare la rimozione
+                e.dataTransfer.setData('text/plain', JSON.stringify({employee, slot}));
                 card.classList.add('dragging');
             };
 
