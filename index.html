@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- VERSION: v1.0.4 - 2026-07-31 - Fix: delay per Supabase + logging salvataggio -->
+<!-- VERSION: v1.0.5 - 2026-07-31 - Fix: disabilita realtime durante salvataggio -->
 <html lang="it">
 <head>
     <meta charset="UTF-8">
@@ -418,7 +418,7 @@
     </div>
 
     <div class="status" id="status"></div>
-    <div class="version-badge">v1.0.4</div>
+    <div class="version-badge">v1.0.5</div>
 
     <script>
         // ===== CONFIG =====
@@ -663,6 +663,11 @@
                     return;
                 }
 
+                // Disabilita realtime subscriptions durante il salvataggio per evitare conflitti
+                console.log('[CONFIRM] Disabling realtime subscriptions...');
+                if (this.subscription) this.subscription.unsubscribe();
+                if (this.confirmationSubscription) this.confirmationSubscription.unsubscribe();
+
                 try {
                     // Invia tutti i cambiamenti a Supabase
                     for (const change of changes) {
@@ -743,6 +748,12 @@
                     // Ricarica la settimana
                     console.log('[CONFIRM] Reloading data from Supabase...');
                     await this.loadWeek();
+
+                    // Riabilita realtime subscriptions
+                    console.log('[CONFIRM] Re-enabling realtime subscriptions...');
+                    this.subscribeToChanges();
+                    this.subscribeToConfirmations();
+
                     this.renderGrid();
                     this.showStatus(`✅ ${changes.length} cambio/i confermato/i!`, false);
 
