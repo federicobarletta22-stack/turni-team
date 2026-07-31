@@ -567,12 +567,12 @@
                         (payload) => {
                             if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
                                 const row = payload.new;
-                                const key = `${row.employee}:${row.day_index}`;
+                                const key = `${row.employee}:${row.day_index}:${row.slot}`;
                                 this.assignments[key] = row;
                                 this.renderGrid();
                             } else if (payload.eventType === 'DELETE') {
                                 const row = payload.old;
-                                const key = `${row.employee}:${row.day_index}`;
+                                const key = `${row.employee}:${row.day_index}:${row.slot}`;
                                 delete this.assignments[key];
                                 this.renderGrid();
                             }
