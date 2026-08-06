@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- VERSION: v1.5.0 - 2026-07-31 - FIX FINALE: Cancella CHIUNQUE ALTRO dallo slot prima di inserire -->
+<!-- VERSION: v1.5.1 - 2026-07-31 - DEBUG: Logging dettagliato per DELETE -->
 <html lang="it">
 <head>
     <meta charset="UTF-8">
@@ -421,7 +421,7 @@
     </div>
 
     <div class="status" id="status"></div>
-    <div class="version-badge">v1.5.0</div>
+    <div class="version-badge">v1.5.1</div>
 
     <script>
         // ===== CONFIG =====
@@ -718,6 +718,8 @@
                             console.log(`[TURNO] Processing shift for ${change.employee} → ${change.slot} on day ${change.dayIndex}`);
 
                             // STEP 1: Cancella TUTTI gli altri employee dallo STESSO slot/day (per evitare duplicati!)
+                            console.log(`[TURNO] DELETE LOG - employee: ${change.employee}, day_index: ${change.dayIndex}, slot: ${change.slot}, week_key: ${weekKey}`);
+
                             const { data: otherRecords } = await this.supabase
                                 .from('assignments')
                                 .select('*')
@@ -727,14 +729,17 @@
                                 .neq('employee', change.employee);  // Esclude il nuovo employee
 
                             if (otherRecords && otherRecords.length > 0) {
-                                console.log(`[TURNO] Removing ${otherRecords.length} other employees from ${change.slot}...`);
+                                console.log(`[TURNO] Found ${otherRecords.length} conflicting records:`, otherRecords.map(r => `${r.employee}:${r.day_index}:${r.slot}`));
                                 for (const record of otherRecords) {
+                                    console.log(`[TURNO] DELETING: ${record.employee} from day ${record.day_index} slot ${record.slot}`);
                                     const { error: deleteError } = await this.supabase
                                         .from('assignments')
                                         .delete()
                                         .eq('id', record.id);
                                     if (deleteError) throw deleteError;
                                 }
+                            } else {
+                                console.log(`[TURNO] No conflicting records found`);
                             }
 
                             // STEP 1b: Cancella il record dello STESSO employee/slot se esiste (per evitare duplicati di se stesso)
