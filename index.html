@@ -667,6 +667,8 @@
                 const weekKey = this.getWeekKey(this.currentWeekStart);
                 const changes = Object.values(this.pendingChanges);
 
+                console.log(`[CONFIRM] PENDING CHANGES (${changes.length} total):`, changes.map(c => `${c.employee}:day${c.dayIndex}:${c.slot}`).join(', '));
+
                 if (changes.length === 0) {
                     this.showStatus('Nessun cambio da confermare', false);
                     return;
